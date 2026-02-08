@@ -6,21 +6,18 @@ Noctiluca Tools - Unified CLI
 A collection of tools for AI agent infrastructure independence.
 
 Commands:
+  status    - Infrastructure readiness dashboard
+  balance   - Check wallet balances across chains
   swap      - Gasless token swaps via CoW Protocol (Base)
   bridge    - Cross-chain bridging via Across Protocol
   vps       - EDIS Global VPS management
 
 Usage:
-  ./noctiluca_tools.py swap quote
-  ./noctiluca_tools.py swap approve
-  ./noctiluca_tools.py swap execute [amount]
-  ./noctiluca_tools.py bridge quote <amount>
-  ./noctiluca_tools.py bridge execute <amount>
-  ./noctiluca_tools.py vps register
-  ./noctiluca_tools.py vps order [--location ID] [--product ID]
-  ./noctiluca_tools.py vps locations
-  ./noctiluca_tools.py vps products
+  ./noctiluca_tools.py status
   ./noctiluca_tools.py balance
+  ./noctiluca_tools.py swap quote|approve|execute [amount]
+  ./noctiluca_tools.py bridge quote|execute <amount>
+  ./noctiluca_tools.py vps register|locations|products|order
 
 Run with --help for more details.
 """
@@ -140,36 +137,79 @@ def cmd_vps(args):
         sys.argv = original_argv
 
 
+def get_wallet_address():
+    """Load wallet address from config."""
+    wallet_file = Path.home() / ".noctiluca" / "private" / "evm_wallet.txt"
+    if not wallet_file.exists():
+        return None
+    
+    for line in wallet_file.read_text().strip().split("\n"):
+        if line.startswith("Address:"):
+            return line.split(":")[1].strip()
+    return None
+
+
+def get_balance(rpc, address, token=None, decimals=18):
+    """Get balance via RPC."""
+    import json
+    import urllib.request
+    
+    try:
+        if token is None:
+            # Native balance
+            data = {
+                "jsonrpc": "2.0",
+                "method": "eth_getBalance",
+                "params": [address, "latest"],
+                "id": 1
+            }
+        else:
+            # ERC20 balance
+            call_data = "0x70a08231" + address[2:].lower().zfill(64)
+            data = {
+                "jsonrpc": "2.0",
+                "method": "eth_call",
+                "params": [{"to": token, "data": call_data}, "latest"],
+                "id": 1
+            }
+        
+        req = urllib.request.Request(
+            rpc,
+            data=json.dumps(data).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "application/json",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.load(resp)
+            if "result" in result:
+                raw = int(result["result"], 16)
+                return raw / (10 ** decimals)
+    except Exception:
+        return None
+    return None
+
+
 def cmd_balance(args):
     """Check wallet balances across networks."""
     import json
     import urllib.request
     
-    # Load wallet
-    wallet_file = Path.home() / ".noctiluca" / "private" / "evm_wallet.txt"
-    if not wallet_file.exists():
-        print("Error: No wallet found at ~/.noctiluca/private/evm_wallet.txt")
-        sys.exit(1)
-    
-    address = None
-    for line in wallet_file.read_text().strip().split("\n"):
-        if line.startswith("Address:"):
-            address = line.split(":")[1].strip()
-            break
-    
+    address = get_wallet_address()
     if not address:
-        print("Error: Could not parse wallet address")
+        print("Error: No wallet found at ~/.noctiluca/private/evm_wallet.txt")
         sys.exit(1)
     
     print(f"Wallet: {address}\n")
     
     # Define networks and tokens
-    # Using publicnode RPCs - most reliable for anonymous access
     networks = {
         "Base": {
             "rpc": "https://base-rpc.publicnode.com",
             "tokens": {
-                "ETH": None,  # Native
+                "ETH": None,
                 "WETH": "0x4200000000000000000000000000000000000006",
                 "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
             }
@@ -177,56 +217,16 @@ def cmd_balance(args):
         "Polygon": {
             "rpc": "https://polygon-bor-rpc.publicnode.com",
             "tokens": {
-                "MATIC": None,  # Native
+                "MATIC": None,
                 "USDC": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
             }
         }
     }
     
-    def get_balance(rpc, address, token=None, decimals=18):
-        """Get balance via RPC."""
-        try:
-            if token is None:
-                # Native balance
-                data = {
-                    "jsonrpc": "2.0",
-                    "method": "eth_getBalance",
-                    "params": [address, "latest"],
-                    "id": 1
-                }
-            else:
-                # ERC20 balance
-                call_data = "0x70a08231" + address[2:].lower().zfill(64)
-                data = {
-                    "jsonrpc": "2.0",
-                    "method": "eth_call",
-                    "params": [{"to": token, "data": call_data}, "latest"],
-                    "id": 1
-                }
-            
-            req = urllib.request.Request(
-                rpc,
-                data=json.dumps(data).encode(),
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Accept": "application/json",
-                }
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                result = json.load(resp)
-                if "result" in result:
-                    raw = int(result["result"], 16)
-                    return raw / (10 ** decimals)
-        except Exception as e:
-            return None
-        return None
-    
     # Check all balances
     for network_name, config in networks.items():
         print(f"=== {network_name} ===")
         for token_name, token_addr in config["tokens"].items():
-            # USDC has 6 decimals
             decimals = 6 if "USDC" in token_name else 18
             balance = get_balance(config["rpc"], address, token_addr, decimals)
             if balance is not None:
@@ -239,12 +239,110 @@ def cmd_balance(args):
         print()
 
 
+def cmd_status(args):
+    """Show comprehensive infrastructure status."""
+    import json
+    import urllib.request
+    from datetime import datetime, timezone
+    
+    print("=" * 60)
+    print("  NOCTILUCA INFRASTRUCTURE STATUS")
+    print(f"  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    print("=" * 60)
+    print()
+    
+    checks = []
+    warnings = []
+    
+    # 1. Wallet check
+    address = get_wallet_address()
+    if address:
+        print(f"✅ Wallet: {address[:10]}...{address[-8:]}")
+        checks.append(("Wallet", True))
+    else:
+        print("❌ Wallet: Not configured")
+        checks.append(("Wallet", False))
+        warnings.append("Create wallet: save address/key to ~/.noctiluca/private/evm_wallet.txt")
+    
+    # 2. Balance check (Polygon USDC is primary for VPS)
+    polygon_usdc = None
+    if address:
+        polygon_usdc = get_balance(
+            "https://polygon-bor-rpc.publicnode.com",
+            address,
+            "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+            6
+        )
+        base_eth = get_balance("https://base-rpc.publicnode.com", address, None, 18)
+        
+        if polygon_usdc is not None and polygon_usdc >= 4.50:
+            print(f"✅ Polygon USDC: ${polygon_usdc:.2f} (enough for VPS)")
+            checks.append(("Funds", True))
+        elif polygon_usdc is not None:
+            print(f"⚠️  Polygon USDC: ${polygon_usdc:.2f} (need $4.50+ for VPS)")
+            checks.append(("Funds", False))
+            warnings.append("Bridge more USDC to Polygon for VPS payment")
+        else:
+            print("❌ Polygon USDC: (RPC error)")
+            checks.append(("Funds", None))
+        
+        if base_eth is not None:
+            print(f"   Base ETH: {base_eth:.6f}")
+    
+    # 3. EDIS credentials check
+    edis_creds = Path.home() / ".noctiluca" / "private" / "edis.txt"
+    if edis_creds.exists():
+        creds = edis_creds.read_text().strip()
+        if ":" in creds:
+            print("✅ EDIS Account: Credentials saved")
+            checks.append(("EDIS Account", True))
+        else:
+            print("⚠️  EDIS Account: Invalid format in edis.txt")
+            checks.append(("EDIS Account", False))
+    else:
+        print("⚠️  EDIS Account: Not registered")
+        checks.append(("EDIS Account", False))
+        warnings.append("Register at https://manage.edisglobal.com/register.php (needs CAPTCHA)")
+    
+    # 4. VPS readiness summary
+    print()
+    print("-" * 40)
+    
+    wallet_ok = checks[0][1]
+    funds_ok = checks[1][1] if len(checks) > 1 else False
+    edis_ok = checks[2][1] if len(checks) > 2 else False
+    
+    if wallet_ok and funds_ok and edis_ok:
+        print("🚀 VPS READY: All prerequisites met!")
+        print("   Run: ./noctiluca_tools.py vps order")
+    elif wallet_ok and funds_ok and not edis_ok:
+        print("⏳ VPS BLOCKED: Need EDIS account")
+        print("   Register at EDIS (requires CAPTCHA):")
+        print("   https://manage.edisglobal.com/register.php")
+    elif wallet_ok and not funds_ok:
+        print("💸 VPS BLOCKED: Need more funds")
+        print("   Bridge USDC to Polygon or earn more")
+    else:
+        print("❌ VPS BLOCKED: Multiple prerequisites missing")
+    
+    # Show warnings
+    if warnings:
+        print()
+        print("📋 Next Steps:")
+        for i, w in enumerate(warnings, 1):
+            print(f"   {i}. {w}")
+    
+    print()
+    print("=" * 60)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Noctiluca Tools - AI Agent Infrastructure CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  %(prog)s status                     Show infrastructure readiness
   %(prog)s balance                    Check wallet balances
   %(prog)s swap quote                 Get WETH→USDC swap quote
   %(prog)s swap approve               Approve WETH for trading (one-time)
@@ -259,6 +357,10 @@ More info: https://github.com/NoctilucaClaw/noctiluca-tools
     )
     
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
+    
+    # Status command
+    status_parser = subparsers.add_parser("status", help="Show infrastructure status")
+    status_parser.set_defaults(func=cmd_status)
     
     # Balance command
     balance_parser = subparsers.add_parser("balance", help="Check wallet balances")
