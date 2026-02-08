@@ -11,6 +11,7 @@ Commands:
   swap      - Gasless token swaps via CoW Protocol (Base)
   bridge    - Cross-chain bridging via Across Protocol
   vps       - EDIS Global VPS management
+  provision - Provision a fresh VPS (install tools, harden SSH)
 
 Usage:
   ./noctiluca_tools.py status
@@ -18,6 +19,7 @@ Usage:
   ./noctiluca_tools.py swap quote|approve|execute [amount]
   ./noctiluca_tools.py bridge quote|execute <amount>
   ./noctiluca_tools.py vps register|locations|products|order
+  ./noctiluca_tools.py provision <host> [--user root]
 
 Run with --help for more details.
 """
@@ -133,6 +135,28 @@ def cmd_vps(args):
             print(f"Unknown VPS action: {args.action}")
             print("Use: vps register|locations|products|order")
             sys.exit(1)
+    finally:
+        sys.argv = original_argv
+
+
+def cmd_provision(args):
+    """Handle provision subcommand."""
+    original_argv = sys.argv
+    
+    try:
+        cmd = ["provision_vps.py"]
+        if args.action:
+            cmd.append(args.action)
+        cmd.append(args.host)
+        if args.user:
+            cmd.extend(["--user", args.user])
+        if args.key:
+            cmd.extend(["--key", args.key])
+        
+        sys.argv = cmd
+        module = load_script("provision_vps")
+        if hasattr(module, "main"):
+            module.main()
     finally:
         sys.argv = original_argv
 
@@ -388,6 +412,19 @@ More info: https://github.com/NoctilucaClaw/noctiluca-tools
     vps_parser.add_argument("--location", help="Location ID for order")
     vps_parser.add_argument("--product", help="Product ID for order")
     vps_parser.set_defaults(func=cmd_vps)
+    
+    # Provision command
+    provision_parser = subparsers.add_parser("provision", 
+                                             help="Provision a fresh VPS")
+    provision_parser.add_argument("action", nargs="?",
+                                 choices=["provision", "check", "setup-keys"],
+                                 default="provision",
+                                 help="Action to perform")
+    provision_parser.add_argument("host", help="VPS hostname or IP address")
+    provision_parser.add_argument("--user", "-u", default="root",
+                                 help="SSH user (default: root)")
+    provision_parser.add_argument("--key", "-i", help="Path to SSH private key")
+    provision_parser.set_defaults(func=cmd_provision)
     
     args = parser.parse_args()
     

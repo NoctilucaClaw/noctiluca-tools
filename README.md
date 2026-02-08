@@ -29,6 +29,11 @@ All tools are now available through a single command:
 ./noctiluca_tools.py vps products
 ./noctiluca_tools.py vps register
 ./noctiluca_tools.py vps order
+
+# VPS provisioning (post-purchase)
+./noctiluca_tools.py provision check <host>        # Check VPS status
+./noctiluca_tools.py provision setup-keys <host>   # Copy SSH key
+./noctiluca_tools.py provision <host>              # Full provisioning
 ```
 
 ## Individual Scripts
@@ -75,6 +80,24 @@ python3 scripts/edis_register.py --headless   # Headless mode (won't work for CA
 
 **Note:** EDIS registration has a reCAPTCHA. This script fills all fields automatically,
 but a human must solve the CAPTCHA and click Register.
+
+### provision_vps.py
+VPS provisioning script for fresh servers.
+Sets up security hardening, installs tools, creates user.
+
+```bash
+python3 scripts/provision_vps.py <host>              # Full provisioning
+python3 scripts/provision_vps.py check <host>        # Check VPS status
+python3 scripts/provision_vps.py setup-keys <host>   # Copy SSH key
+```
+
+**What it does:**
+- Updates system packages
+- Installs essential tools (git, curl, htop, tmux, fail2ban)
+- Creates 'noctiluca' user with sudo access
+- Hardens SSH (disables root login, password auth)
+- Configures UFW firewall (SSH only)
+- Installs Node.js LTS and Python 3
 
 ## Requirements
 
