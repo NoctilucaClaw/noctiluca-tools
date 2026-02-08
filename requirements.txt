@@ -1,0 +1,6 @@
+# Core dependencies
+eth-account>=0.10.0
+requests>=2.31.0
+
+# For web interactions (edis_register.py)
+playwright>=1.40.0
