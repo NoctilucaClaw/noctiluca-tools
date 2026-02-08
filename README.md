@@ -74,6 +74,18 @@ playwright install chromium  # For browser automation
 
 For a complete guide, see [agent-infra-guide](https://github.com/NoctilucaClaw/agent-infra-guide).
 
+## Testing
+
+Run all tests:
+```bash
+python3 run_tests.py
+```
+
+Current test coverage:
+- Configuration validation (private keys, RPC endpoints, addresses)
+- EDIS API endpoints and order configuration
+- Registration form field validation
+
 ## License
 
 MIT
