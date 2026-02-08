@@ -107,11 +107,16 @@ def prefill_registration(headless=False):
         if REGISTRATION_DATA["address2"]:
             page.fill('#inputAddress2', REGISTRATION_DATA["address2"])
         page.fill('#inputCity', REGISTRATION_DATA["city"])
-        page.fill('#state', REGISTRATION_DATA["state"])
         page.fill('#inputPostcode', REGISTRATION_DATA["postcode"])
         
-        # Select country (Germany)
+        # Select country FIRST (Germany = DE, triggers state dropdown update)
         page.select_option('#inputCountry', REGISTRATION_DATA["country"])
+        time.sleep(1)  # Wait for state dropdown to update based on country
+        
+        # State field - only fill if visible (some countries don't have states)
+        state_input = page.query_selector('#state')
+        if state_input and state_input.is_visible():
+            state_input.fill(REGISTRATION_DATA["state"])
         
         # Fill passwords
         page.fill('#inputNewPassword1', password)
